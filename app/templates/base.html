@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}CineConnect - Indie Cinema Platform{% endblock %}</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <nav class="navbar">
+    <div class="nav-container">
+      <a href="/" class="nav-brand">🎬 <span>CineConnect</span></a>
+      <ul class="nav-links">
+        <li><a class="nav-link" href="/">Explore Films</a></li>
+        <li id="nav-role-links"></li>
+        <div id="nav-guest-links" style="display: flex; gap: 1rem; align-items: center;">
+          <li><a class="nav-link" href="/login">Login</a></li>
+          <li><a class="btn btn-primary btn-sm" href="/register">Join Platform</a></li>
+        </div>
+        <div id="nav-user-links" style="display: none; gap: 1rem; align-items: center;">
+          <li><a class="nav-link" href="/my-bookings">🎟️ My Bookings</a></li>
+          <li><span class="user-badge" id="nav-user-role">VIEWER</span></li>
+          <li><span style="color: var(--text-muted); font-size: 0.9rem;" id="nav-user-name">User</span></li>
+          <li><button class="btn btn-secondary btn-sm" onclick="CineAPI.logout()">Logout</button></li>
+        </div>
+      </ul>
+    </div>
+  </nav>
+
+  <main class="container">
+    <div id="flash-message-container"></div>
+    {% block content %}{% endblock %}
+  </main>
+
+  <script src="/static/js/api.js"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

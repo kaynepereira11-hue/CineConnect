@@ -1,0 +1,341 @@
+{% extends "base.html" %}
+
+{% block title %}Select Your Seats - CineConnect{% endblock %}
+
+{% block head %}
+<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+{% endblock %}
+
+{% block content %}
+<div id="booking-container" style="max-width: 850px; margin: 0 auto; padding-top: 1rem;">
+  <div id="screening-header" style="text-align: center; margin-bottom: 2rem;">
+    <p style="color: var(--text-muted);">Loading screening info & seat map...</p>
+  </div>
+
+  <div id="alert-box" style="display: none;"></div>
+
+  <div class="screen-container" id="seat-map-wrapper" style="display: none;">
+    <div class="screen-bar"></div>
+    <div class="screen-text">Cinema Screen Area</div>
+
+    <div id="seat-grid" class="seat-grid">
+      <!-- Seats dynamically rendered here -->
+    </div>
+
+    <div class="seat-legend">
+      <div class="legend-item">
+        <div class="legend-dot" style="background: var(--seat-available);"></div>
+        <span>Available</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-dot" style="background: var(--seat-selected);"></div>
+        <span>Selected</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-dot" style="background: var(--seat-booked);"></div>
+        <span>Reserved / Booked</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-dot" style="border: 2px solid var(--seat-premium); background: var(--seat-available);"></div>
+        <span>Premium</span>
+      </div>
+    </div>
+
+    <div class="card" style="width: 100%; margin-top: 2rem; padding: 1.5rem; border-color: var(--border-color);">
+      <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+        <div>
+          <div style="font-size: 0.9rem; color: var(--text-muted);">Selected Seats:</div>
+          <div id="selected-seats-display" style="font-size: 1.15rem; font-weight: 700; color: var(--accent-gold); margin-top: 0.2rem;">
+            None
+          </div>
+        </div>
+        <div style="text-align: right;">
+          <div style="font-size: 0.9rem; color: var(--text-muted);">Total Amount:</div>
+          <div id="total-price-display" style="font-size: 1.5rem; font-weight: 700; color: var(--text-main); margin-top: 0.2rem;">
+            ₹0.00
+          </div>
+        </div>
+      </div>
+      <button id="book-btn" class="btn btn-primary" style="width: 100%; margin-top: 1.25rem;" onclick="initiateBooking()">
+        Reserve & Proceed to Payment
+      </button>
+    </div>
+  </div>
+
+  <!-- Payment Step / Modal Box -->
+  <div id="payment-box" style="display: none; background: var(--bg-card); border: 1px solid var(--accent-gold); border-radius: var(--radius); padding: 2rem; text-align: center; margin-top: 2rem;">
+    <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">💳</div>
+    <h2 style="color: var(--accent-gold); margin-bottom: 0.5rem;">Complete Payment with Razorpay</h2>
+    <p style="color: var(--text-muted); margin-bottom: 1.5rem;">
+      Your seats are reserved under status <strong>PENDING</strong>. Complete payment to confirm your booking.
+    </p>
+
+    <div id="payment-details" style="background: var(--bg-secondary); padding: 1.25rem; border-radius: var(--radius); margin-bottom: 1.5rem; text-align: left; font-size: 0.95rem; line-height: 1.8;">
+    </div>
+
+    <div style="display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
+      <button id="rzp-pay-btn" class="btn btn-primary" onclick="launchRazorpayCheckout()">
+        Pay via Razorpay
+      </button>
+      <button id="mock-pay-btn" class="btn btn-secondary" onclick="simulateTestPayment()">
+        ⚡ Simulate Test Payment (Demo Mode)
+      </button>
+    </div>
+  </div>
+
+  <!-- Success confirmation Modal / Box -->
+  <div id="success-box" style="display: none; background: var(--bg-card); border: 1px solid var(--accent-green); border-radius: var(--radius); padding: 2rem; text-align: center; margin-top: 2rem;">
+    <div style="font-size: 3rem; margin-bottom: 0.5rem;">🎉</div>
+    <h2 style="color: var(--accent-green); margin-bottom: 0.5rem;">Ticket Confirmed!</h2>
+    <p style="color: var(--text-muted); margin-bottom: 1.5rem;">
+      Your payment was verified and your tickets have been issued.
+    </p>
+    <div id="success-details" style="background: var(--bg-secondary); padding: 1.25rem; border-radius: var(--radius); margin-bottom: 1.5rem; text-align: left; font-size: 0.95rem; line-height: 1.8;">
+    </div>
+    <div style="display: flex; gap: 1rem; justify-content: center;">
+      <a href="/my-bookings" class="btn btn-primary">View in My Bookings</a>
+      <a href="/" class="btn btn-secondary">Browse More Films</a>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const screeningId = {{ screening_id }};
+let ticketPrice = 0;
+let selectedSeats = new Map(); // seat_id -> seat_number
+let currentBooking = null;
+let currentPaymentOrder = null;
+
+function showAlert(msg, type = "danger") {
+  const alert = document.getElementById("alert-box");
+  alert.className = `alert alert-${type}`;
+  alert.textContent = msg;
+  alert.style.display = "block";
+}
+
+async function loadSeats() {
+  try {
+    const res = await CineAPI.request(`/api/seats/screening/${screeningId}`);
+    const data = res.data;
+    const screening = data.screening;
+    const seats = data.seats;
+    ticketPrice = screening.ticket_price;
+
+    document.getElementById("screening-header").innerHTML = `
+      <h1 style="font-size: 2rem; font-weight: 700;">${screening.film_title}</h1>
+      <p style="color: var(--text-muted); font-size: 1rem; margin-top: 0.4rem;">
+        📍 ${screening.cinema_name} (${screening.screen_name}) | 📅 ${screening.date} @ ${screening.start_time}
+      </p>
+      <div class="badge" style="background: rgba(245, 158, 11, 0.2); color: #fbbf24; margin-top: 0.5rem;">
+        Ticket Price: ₹${ticketPrice} per seat
+      </div>
+    `;
+
+    const seatGrid = document.getElementById("seat-grid");
+    seatGrid.innerHTML = seats.map(s => {
+      const isBooked = s.is_booked;
+      const isPremium = s.seat_type === 'PREMIUM';
+      const classes = `seat ${isBooked ? 'booked' : 'available'} ${isPremium ? 'premium' : ''}`;
+      
+      return `
+        <div class="${classes}" 
+             data-id="${s.seat_id}" 
+             data-number="${s.seat_number}" 
+             data-booked="${isBooked}"
+             onclick="toggleSeat(${s.seat_id}, '${s.seat_number}', ${isBooked}, this)">
+          ${s.seat_number}
+        </div>
+      `;
+    }).join("");
+
+    document.getElementById("seat-map-wrapper").style.display = "flex";
+  } catch (err) {
+    showAlert(`Failed to load seats: ${err.message}`);
+  }
+}
+
+function toggleSeat(seatId, seatNumber, isBooked, el) {
+  if (isBooked) return;
+
+  if (selectedSeats.has(seatId)) {
+    selectedSeats.delete(seatId);
+    el.classList.remove("selected");
+  } else {
+    selectedSeats.set(seatId, seatNumber);
+    el.classList.add("selected");
+  }
+
+  updateSummary();
+}
+
+function updateSummary() {
+  const count = selectedSeats.size;
+  const total = count * ticketPrice;
+
+  const display = document.getElementById("selected-seats-display");
+  const priceDisplay = document.getElementById("total-price-display");
+
+  if (count === 0) {
+    display.textContent = "None";
+    priceDisplay.textContent = "₹0.00";
+  } else {
+    display.textContent = Array.from(selectedSeats.values()).join(", ");
+    priceDisplay.textContent = `₹${total.toFixed(2)}`;
+  }
+}
+
+async function initiateBooking() {
+  const user = CineAPI.getUser();
+  if (!user) {
+    alert("Please sign in or register to complete your reservation.");
+    window.location.href = "/login";
+    return;
+  }
+
+  if (user.role !== "VIEWER") {
+    showAlert("Only Viewer accounts can reserve tickets. Please log in with a viewer account.");
+    return;
+  }
+
+  if (selectedSeats.size === 0) {
+    showAlert("Please select at least one seat.");
+    return;
+  }
+
+  const seatIds = Array.from(selectedSeats.keys());
+  const btn = document.getElementById("book-btn");
+  btn.disabled = true;
+  btn.textContent = "Reserving seats...";
+
+  try {
+    const res = await CineAPI.request("/api/bookings/initiate", {
+      method: "POST",
+      body: JSON.stringify({
+        screening_id: screeningId,
+        seat_ids: seatIds
+      })
+    });
+
+    currentBooking = res.data;
+
+    // Create payment order
+    const orderRes = await CineAPI.request("/api/payments/create-order", {
+      method: "POST",
+      body: JSON.stringify({ booking_id: currentBooking.booking_id })
+    });
+    currentPaymentOrder = orderRes.data;
+
+    // Transition to payment box
+    document.getElementById("seat-map-wrapper").style.display = "none";
+    document.getElementById("alert-box").style.display = "none";
+
+    document.getElementById("payment-details").innerHTML = `
+      <div><strong>Booking ID:</strong> #${currentBooking.booking_id}</div>
+      <div><strong>Reserved Seats:</strong> ${currentBooking.seats.join(", ")}</div>
+      <div><strong>Total Amount:</strong> ₹${currentBooking.total_amount.toFixed(2)}</div>
+      <div><strong>Razorpay Order ID:</strong> ${currentPaymentOrder.order_id}</div>
+      <div><strong>Status:</strong> <span class="badge badge-pending">PENDING</span></div>
+    `;
+
+    document.getElementById("payment-box").style.display = "block";
+
+    // If live keys, auto-prompt razorpay checkout
+    if (!currentPaymentOrder.is_mock && window.Razorpay) {
+      launchRazorpayCheckout();
+    }
+  } catch (err) {
+    showAlert(`Reservation error: ${err.message}`);
+    btn.disabled = false;
+    btn.textContent = "Reserve & Proceed to Payment";
+  }
+}
+
+function launchRazorpayCheckout() {
+  const user = CineAPI.getUser();
+  if (!currentPaymentOrder || !currentBooking) return;
+
+  if (currentPaymentOrder.is_mock) {
+    simulateTestPayment();
+    return;
+  }
+
+  const options = {
+    key: currentPaymentOrder.key_id,
+    amount: currentPaymentOrder.amount,
+    currency: currentPaymentOrder.currency,
+    name: "CineConnect Screenings",
+    description: `Booking #${currentBooking.booking_id} Tickets`,
+    order_id: currentPaymentOrder.order_id,
+    handler: async function (response) {
+      await verifyPayment(
+        currentBooking.booking_id,
+        response.razorpay_order_id,
+        response.razorpay_payment_id,
+        response.razorpay_signature
+      );
+    },
+    prefill: {
+      name: user.name,
+      email: user.email
+    },
+    theme: {
+      color: "#f59e0b"
+    }
+  };
+
+  const rzp = new Razorpay(options);
+  rzp.on('payment.failed', function (response) {
+    showAlert(`Payment Failed: ${response.error.description}`);
+  });
+  rzp.open();
+}
+
+async function simulateTestPayment() {
+  if (!currentBooking || !currentPaymentOrder) return;
+
+  const mockPayId = `pay_mock_${Date.now()}`;
+  const mockSig = `mock_sig_${Date.now()}`;
+
+  await verifyPayment(
+    currentBooking.booking_id,
+    currentPaymentOrder.order_id,
+    mockPayId,
+    mockSig
+  );
+}
+
+async function verifyPayment(bookingId, orderId, paymentId, signature) {
+  try {
+    const res = await CineAPI.request("/api/payments/verify", {
+      method: "POST",
+      body: JSON.stringify({
+        booking_id: bookingId,
+        razorpay_order_id: orderId,
+        razorpay_payment_id: paymentId,
+        razorpay_signature: signature
+      })
+    });
+
+    const b = res.data;
+    document.getElementById("payment-box").style.display = "none";
+    document.getElementById("alert-box").style.display = "none";
+
+    document.getElementById("success-details").innerHTML = `
+      <div><strong>Booking ID:</strong> #${b.booking_id}</div>
+      <div><strong>Payment Reference:</strong> ${b.payment_id}</div>
+      <div><strong>Total Paid:</strong> ₹${parseFloat(b.total_amount).toFixed(2)}</div>
+      <div><strong>Booking Status:</strong> <span class="badge badge-confirmed">${b.booking_status}</span></div>
+      <div><strong>Payment Status:</strong> <span class="badge badge-confirmed">${b.payment_status}</span></div>
+    `;
+
+    document.getElementById("success-box").style.display = "block";
+  } catch (err) {
+    showAlert(`Payment verification failed: ${err.message}`);
+  }
+}
+
+document.addEventListener("DOMContentLoaded", loadSeats);
+</script>
+{% endblock %}

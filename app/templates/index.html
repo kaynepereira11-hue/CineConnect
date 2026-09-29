@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+
+{% block title %}Discover Films - CineConnect{% endblock %}
+
+{% block content %}
+<div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; margin-top: 1rem;">
+  <div>
+    <h1 style="font-size: 2rem; font-weight: 700;">Featured Independent Films</h1>
+    <p style="color: var(--text-muted);">Discover, support, and book exclusive screenings for indie & student films.</p>
+  </div>
+  <div style="display: flex; gap: 0.5rem;">
+    <input type="text" id="genre-filter" class="form-control" placeholder="Filter by genre..." style="width: 200px;">
+    <button class="btn btn-secondary" onclick="loadFilms()">Search</button>
+  </div>
+</div>
+
+<div id="films-grid" class="grid">
+  <!-- Dynamic film cards will be injected here -->
+</div>
+
+<div id="no-films" style="display: none; text-align: center; margin: 4rem 0; color: var(--text-muted);">
+  <h3>No films found matching your search.</h3>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function loadFilms() {
+  const genre = document.getElementById("genre-filter").value.trim();
+  const grid = document.getElementById("films-grid");
+  const noFilms = document.getElementById("no-films");
+  
+  grid.innerHTML = "<p style='color: var(--text-muted);'>Loading films...</p>";
+  
+  try {
+    let url = "/api/films/?status=APPROVED";
+    if (genre) url += `&genre=${encodeURIComponent(genre)}`;
+    
+    const res = await CineAPI.request(url);
+    const films = res.data;
+    
+    if (!films || films.length === 0) {
+      grid.innerHTML = "";
+      noFilms.style.display = "block";
+      return;
+    }
+    
+    noFilms.style.display = "none";
+    grid.innerHTML = films.map(film => `
+      <div class="card">
+        <img src="${film.poster || 'https://images.unsplash.com/photo-1485846234645-a62644f84728?auto=format&fit=crop&w=600&q=80'}" class="card-img" alt="${film.title}" onerror="this.src='https://images.unsplash.com/photo-1485846234645-a62644f84728?auto=format&fit=crop&w=600&q=80'">
+        <div class="card-body">
+          <h3 class="card-title">${film.title}</h3>
+          <div class="card-meta">
+            <span class="badge" style="background: rgba(59, 130, 246, 0.2); color: #93c5fd;">${film.genre}</span>
+            <span>⏱️ ${film.duration} mins</span>
+          </div>
+          <p class="card-desc">${film.description ? film.description.slice(0, 100) + '...' : 'No synopsis provided.'}</p>
+          <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem;">
+            By: <strong style="color: var(--text-main);">${film.filmmaker_name || 'Independent Filmmaker'}</strong>
+          </div>
+          <a href="/films/${film.film_id}" class="btn btn-primary" style="width: 100%;">View Showtimes & Seats</a>
+        </div>
+      </div>
+    `).join("");
+  } catch (err) {
+    grid.innerHTML = `<div class="alert alert-danger">Error loading films: ${err.message}</div>`;
+  }
+}
+
+document.addEventListener("DOMContentLoaded", loadFilms);
+</script>
+{% endblock %}

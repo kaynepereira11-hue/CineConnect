@@ -1,0 +1,237 @@
+{% extends "base.html" %}
+
+{% block title %}Cinema Manager Dashboard - CineConnect{% endblock %}
+
+{% block content %}
+<div style="margin-top: 1rem;">
+  <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; margin-bottom: 2rem;">
+    <div>
+      <h1 style="font-size: 2rem; font-weight: 700;">🏢 Cinema Manager Portal</h1>
+      <p style="color: var(--text-muted);">Manage your auditoriums, screens, and schedule film showtimes.</p>
+    </div>
+    <div style="display: flex; gap: 0.5rem;">
+      <button class="btn btn-secondary" onclick="toggleScreenModal()">+ Add Screen</button>
+      <button class="btn btn-primary" onclick="toggleScreeningModal()">+ Schedule Screening</button>
+    </div>
+  </div>
+
+  <div id="cinema-alert" style="display: none;"></div>
+
+  <!-- Add Screen Modal/Form -->
+  <div id="add-screen-card" class="card" style="display: none; padding: 1.5rem; margin-bottom: 2rem; border-color: var(--accent-gold);">
+    <h3 style="margin-bottom: 1rem;">Add Screen to Cinema</h3>
+    <form id="add-screen-form">
+      <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem;">
+        <div class="form-group">
+          <label class="form-label">Select Cinema *</label>
+          <select id="screen-cinema-select" class="form-control" required></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Screen Name / Hall *</label>
+          <input type="text" id="screen-name" class="form-control" required placeholder="e.g. Screen 2 - Gold Hall">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Capacity (Seats) *</label>
+          <input type="number" id="screen-capacity" class="form-control" required min="1" max="500" value="30">
+        </div>
+      </div>
+      <div style="display: flex; gap: 1rem; justify-content: flex-end;">
+        <button type="button" class="btn btn-secondary" onclick="toggleScreenModal()">Cancel</button>
+        <button type="submit" class="btn btn-primary">Create Screen</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Schedule Screening Form -->
+  <div id="schedule-screening-card" class="card" style="display: none; padding: 1.5rem; margin-bottom: 2rem; border-color: var(--accent-gold);">
+    <h3 style="margin-bottom: 1rem;">Schedule a Film Screening</h3>
+    <form id="schedule-screening-form">
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+        <div class="form-group">
+          <label class="form-label">Select Approved Film *</label>
+          <select id="screening-film-select" class="form-control" required></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Select Cinema Screen *</label>
+          <select id="screening-screen-select" class="form-control" required></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Screening Date *</label>
+          <input type="date" id="screening-date" class="form-control" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Ticket Price (₹) *</label>
+          <input type="number" id="screening-price" class="form-control" required min="0" step="10" value="150">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Start Time *</label>
+          <input type="time" id="screening-start" class="form-control" required value="18:00">
+        </div>
+        <div class="form-group">
+          <label class="form-label">End Time *</label>
+          <input type="time" id="screening-end" class="form-control" required value="20:00">
+        </div>
+      </div>
+      <div style="display: flex; gap: 1rem; justify-content: flex-end;">
+        <button type="button" class="btn btn-secondary" onclick="toggleScreeningModal()">Cancel</button>
+        <button type="submit" class="btn btn-primary">Schedule Show</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Overview Section -->
+  <h2 style="font-size: 1.3rem; margin-bottom: 1rem;">Cinemas & Screens Overview</h2>
+  <div id="cinemas-list" class="grid" style="grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));">
+    <!-- Populated dynamically -->
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function toggleScreenModal() {
+  const card = document.getElementById("add-screen-card");
+  card.style.display = card.style.display === "none" ? "block" : "none";
+}
+
+function toggleScreeningModal() {
+  const card = document.getElementById("schedule-screening-card");
+  card.style.display = card.style.display === "none" ? "block" : "none";
+}
+
+async function initCinemaDashboard() {
+  const user = CineAPI.getUser();
+  if (!user || user.role !== "CINEMA" && user.role !== "ADMIN") {
+    alert("Cinema manager access required.");
+    window.location.href = "/login";
+    return;
+  }
+
+  // Set default date to tomorrow
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  document.getElementById("screening-date").value = tomorrow.toISOString().split('T')[0];
+
+  await loadCinemas();
+  await loadApprovedFilms();
+}
+
+async function loadCinemas() {
+  const list = document.getElementById("cinemas-list");
+  const cinemaSelect = document.getElementById("screen-cinema-select");
+  const screenSelect = document.getElementById("screening-screen-select");
+
+  try {
+    const res = await CineAPI.request("/api/cinemas/");
+    const cinemas = res.data;
+
+    cinemaSelect.innerHTML = cinemas.map(c => `<option value="${c.cinema_id}">${c.name} (${c.location})</option>`).join("");
+    
+    // Load screens for each cinema
+    let html = "";
+    screenSelect.innerHTML = "";
+
+    for (const c of cinemas) {
+      const screensRes = await CineAPI.request(`/api/screens/cinema/${c.cinema_id}`);
+      const screens = screensRes.data;
+
+      screens.forEach(s => {
+        screenSelect.innerHTML += `<option value="${s.screen_id}">${c.name} - ${s.screen_name} (${s.capacity} seats)</option>`;
+      });
+
+      html += `
+        <div class="card" style="padding: 1.5rem;">
+          <h3 style="font-size: 1.25rem; font-weight: 700; margin-bottom: 0.3rem;">${c.name}</h3>
+          <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem;">📍 ${c.location}</p>
+          <div style="font-size: 0.9rem; font-weight: 600; margin-bottom: 0.5rem; color: var(--accent-gold);">
+            Screens (${screens.length}):
+          </div>
+          <ul style="list-style: none; font-size: 0.85rem; color: var(--text-muted); line-height: 1.6;">
+            ${screens.length > 0 ? screens.map(s => `
+              <li>• <strong>${s.screen_name}</strong> — Capacity: ${s.capacity} seats</li>
+            `).join("") : "<li>No screens added yet.</li>"}
+          </ul>
+        </div>
+      `;
+    }
+
+    list.innerHTML = html;
+  } catch (err) {
+    list.innerHTML = `<div class="alert alert-danger">${err.message}</div>`;
+  }
+}
+
+async function loadApprovedFilms() {
+  const select = document.getElementById("screening-film-select");
+  try {
+    const res = await CineAPI.request("/api/films/?status=APPROVED");
+    select.innerHTML = res.data.map(f => `
+      <option value="${f.film_id}">${f.title} (${f.genre}, ${f.duration}m)</option>
+    `).join("");
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+document.getElementById("add-screen-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const alertBox = document.getElementById("cinema-alert");
+  alertBox.style.display = "none";
+
+  const cinema_id = document.getElementById("screen-cinema-select").value;
+  const screen_name = document.getElementById("screen-name").value.trim();
+  const capacity = document.getElementById("screen-capacity").value;
+
+  try {
+    await CineAPI.request("/api/screens/", {
+      method: "POST",
+      body: JSON.stringify({ cinema_id: parseInt(cinema_id), screen_name, capacity: parseInt(capacity) })
+    });
+
+    alertBox.className = "alert alert-success";
+    alertBox.textContent = "Screen created successfully!";
+    alertBox.style.display = "block";
+
+    document.getElementById("add-screen-form").reset();
+    toggleScreenModal();
+    loadCinemas();
+  } catch (err) {
+    alertBox.className = "alert alert-danger";
+    alertBox.textContent = err.message;
+    alertBox.style.display = "block";
+  }
+});
+
+document.getElementById("schedule-screening-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const alertBox = document.getElementById("cinema-alert");
+  alertBox.style.display = "none";
+
+  const film_id = parseInt(document.getElementById("screening-film-select").value);
+  const screen_id = parseInt(document.getElementById("screening-screen-select").value);
+  const date = document.getElementById("screening-date").value;
+  const ticket_price = parseFloat(document.getElementById("screening-price").value);
+  const start_time = document.getElementById("screening-start").value;
+  const end_time = document.getElementById("screening-end").value;
+
+  try {
+    await CineAPI.request("/api/screenings/", {
+      method: "POST",
+      body: JSON.stringify({ film_id, screen_id, date, ticket_price, start_time, end_time })
+    });
+
+    alertBox.className = "alert alert-success";
+    alertBox.textContent = "Screening scheduled successfully!";
+    alertBox.style.display = "block";
+
+    toggleScreeningModal();
+  } catch (err) {
+    alertBox.className = "alert alert-danger";
+    alertBox.textContent = err.message;
+    alertBox.style.display = "block";
+  }
+});
+
+document.addEventListener("DOMContentLoaded", initCinemaDashboard);
+</script>
+{% endblock %}

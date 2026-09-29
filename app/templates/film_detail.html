@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+
+{% block title %}Film Details - CineConnect{% endblock %}
+
+{% block content %}
+<div id="film-detail-container" style="margin-top: 1.5rem;">
+  <p style="color: var(--text-muted);">Loading film details...</p>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const filmId = {{ film_id }};
+
+async function loadFilmDetails() {
+  const container = document.getElementById("film-detail-container");
+  
+  try {
+    const res = await CineAPI.request(`/api/films/${filmId}`);
+    const film = res.data;
+    
+    container.innerHTML = `
+      <div style="display: flex; gap: 2rem; flex-wrap: wrap; margin-bottom: 3rem;">
+        <img src="${film.poster || 'https://images.unsplash.com/photo-1485846234645-a62644f84728?auto=format&fit=crop&w=600&q=80'}" 
+             style="width: 300px; height: 440px; object-fit: cover; border-radius: var(--radius); border: 1px solid var(--border-color); box-shadow: var(--shadow);" 
+             alt="${film.title}"
+             onerror="this.src='https://images.unsplash.com/photo-1485846234645-a62644f84728?auto=format&fit=crop&w=600&q=80'">
+        <div style="flex: 1; min-width: 300px;">
+          <div style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.5rem;">
+            <span class="badge" style="background: rgba(59, 130, 246, 0.2); color: #93c5fd;">${film.genre}</span>
+            <span style="color: var(--text-muted); font-size: 0.9rem;">⏱️ ${film.duration} mins</span>
+          </div>
+          <h1 style="font-size: 2.5rem; font-weight: 700; margin-bottom: 0.5rem;">${film.title}</h1>
+          <p style="color: var(--accent-gold); font-weight: 500; margin-bottom: 1.5rem;">
+            Directed by ${film.filmmaker_name} (${film.filmmaker_email})
+          </p>
+          <h3 style="font-size: 1.1rem; margin-bottom: 0.5rem;">Synopsis</h3>
+          <p style="color: var(--text-muted); line-height: 1.6; margin-bottom: 2rem;">
+            ${film.description || 'No synopsis provided.'}
+          </p>
+        </div>
+      </div>
+
+      <div>
+        <h2 style="font-size: 1.75rem; margin-bottom: 1rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem;">
+          🗓️ Available Screenings
+        </h2>
+        
+        ${film.screenings && film.screenings.length > 0 ? `
+          <div class="grid" style="grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));">
+            ${film.screenings.map(s => `
+              <div class="card" style="padding: 1.25rem;">
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.75rem;">
+                  <div>
+                    <h3 style="font-size: 1.15rem; font-weight: 600;">${s.cinema_name}</h3>
+                    <p style="font-size: 0.85rem; color: var(--text-muted);">📍 ${s.cinema_location}</p>
+                  </div>
+                  <span class="badge" style="background: rgba(245, 158, 11, 0.2); color: #fbbf24; font-size: 0.85rem;">
+                    ₹${s.ticket_price}
+                  </span>
+                </div>
+                <div style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 1.25rem;">
+                  <div>🏛️ <strong>${s.screen_name}</strong></div>
+                  <div>📅 ${s.date} | ⏰ ${s.start_time} - ${s.end_time}</div>
+                </div>
+                <a href="/screenings/${s.screening_id}/seats" class="btn btn-primary" style="width: 100%;">
+                  Select Seats
+                </a>
+              </div>
+            `).join('')}
+          </div>
+        ` : `
+          <div style="background: var(--bg-card); padding: 2rem; border-radius: var(--radius); text-align: center; color: var(--text-muted); border: 1px solid var(--border-color);">
+            <p>No upcoming screenings are currently scheduled for this film.</p>
+          </div>
+        `}
+      </div>
+    `;
+  } catch (err) {
+    container.innerHTML = `<div class="alert alert-danger">Failed to load film details: ${err.message}</div>`;
+  }
+}
+
+document.addEventListener("DOMContentLoaded", loadFilmDetails);
+</script>
+{% endblock %}

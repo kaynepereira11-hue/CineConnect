@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+
+{% block title %}Create Account - CineConnect{% endblock %}
+
+{% block content %}
+<div class="form-card">
+  <h2 style="margin-bottom: 0.5rem; text-align: center;">Join CineConnect</h2>
+  <p style="color: var(--text-muted); text-align: center; margin-bottom: 1.5rem; font-size: 0.9rem;">
+    Choose your role to get started on the indie cinema network.
+  </p>
+
+  <div id="register-alert" style="display: none;"></div>
+
+  <form id="register-form">
+    <div class="form-group">
+      <label class="form-label" for="name">Full Name / Organization</label>
+      <input type="text" id="name" class="form-control" required placeholder="e.g. Priya Sharma">
+    </div>
+
+    <div class="form-group">
+      <label class="form-label" for="email">Email Address</label>
+      <input type="email" id="email" class="form-control" required placeholder="name@example.com">
+    </div>
+
+    <div class="form-group">
+      <label class="form-label" for="role">Select Your Role</label>
+      <select id="role" class="form-control" required>
+        <option value="VIEWER">🎟️ Viewer (Watch & Book Films)</option>
+        <option value="FILMMAKER">🎬 Filmmaker (Submit & Distribute Films)</option>
+        <option value="CINEMA">🏢 Cinema Owner / Manager (Host Screenings)</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label" for="password">Password (min 6 characters)</label>
+      <input type="password" id="password" class="form-control" minlength="6" required placeholder="••••••••">
+    </div>
+
+    <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 1rem;">Create Account</button>
+  </form>
+
+  <div style="margin-top: 1.5rem; text-align: center; font-size: 0.9rem; color: var(--text-muted);">
+    Already have an account? <a href="/login">Sign In</a>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById("register-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const alertBox = document.getElementById("register-alert");
+  alertBox.style.display = "none";
+
+  const name = document.getElementById("name").value.trim();
+  const email = document.getElementById("email").value.trim();
+  const role = document.getElementById("role").value;
+  const password = document.getElementById("password").value;
+
+  try {
+    const res = await CineAPI.request("/api/auth/register", {
+      method: "POST",
+      body: JSON.stringify({ name, email, role, password })
+    });
+
+    CineAPI.setAuth(res.data.token, res.data.user);
+    
+    if (role === "FILMMAKER") {
+      window.location.href = "/filmmaker/dashboard";
+    } else if (role === "CINEMA") {
+      window.location.href = "/cinema/dashboard";
+    } else {
+      window.location.href = "/";
+    }
+  } catch (err) {
+    alertBox.className = "alert alert-danger";
+    alertBox.textContent = err.message;
+    alertBox.style.display = "block";
+  }
+});
+</script>
+{% endblock %}

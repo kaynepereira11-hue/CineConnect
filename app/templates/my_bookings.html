@@ -1,0 +1,176 @@
+{% extends "base.html" %}
+
+{% block title %}My Tickets & Bookings - CineConnect{% endblock %}
+
+{% block head %}
+<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+{% endblock %}
+
+{% block content %}
+<div style="margin-top: 1rem;">
+  <h1 style="font-size: 2rem; font-weight: 700; margin-bottom: 0.5rem;">🎟️ My Bookings & Tickets</h1>
+  <p style="color: var(--text-muted); margin-bottom: 2rem;">Review your active film screening tickets and previous reservations.</p>
+
+  <div id="booking-alert" style="display: none;"></div>
+
+  <div id="bookings-container">
+    <p style="color: var(--text-muted);">Loading your bookings...</p>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function showBookingAlert(msg, type = "danger") {
+  const alertBox = document.getElementById("booking-alert");
+  alertBox.className = `alert alert-${type}`;
+  alertBox.textContent = msg;
+  alertBox.style.display = "block";
+}
+
+async function loadBookings() {
+  const container = document.getElementById("bookings-container");
+  const user = CineAPI.getUser();
+
+  if (!user) {
+    container.innerHTML = `
+      <div class="alert alert-danger">
+        Please <a href="/login">sign in</a> to view your booking history.
+      </div>
+    `;
+    return;
+  }
+
+  try {
+    const res = await CineAPI.request("/api/bookings/user/history");
+    const bookings = res.data;
+
+    if (!bookings || bookings.length === 0) {
+      container.innerHTML = `
+        <div style="background: var(--bg-card); padding: 3rem; text-align: center; border-radius: var(--radius); border: 1px solid var(--border-color);">
+          <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">🎬</div>
+          <h3 style="margin-bottom: 0.5rem;">No bookings yet</h3>
+          <p style="color: var(--text-muted); margin-bottom: 1.5rem;">You haven't reserved any film screenings yet.</p>
+          <a href="/" class="btn btn-primary">Browse Active Screenings</a>
+        </div>
+      `;
+      return;
+    }
+
+    container.innerHTML = bookings.map(b => `
+      <div class="ticket-card">
+        <div style="display: flex; gap: 1.5rem; align-items: center; flex-wrap: wrap;">
+          <img src="${b.film_poster || 'https://images.unsplash.com/photo-1485846234645-a62644f84728?auto=format&fit=crop&w=600&q=80'}" 
+               style="width: 90px; height: 130px; object-fit: cover; border-radius: var(--radius);" 
+               alt="${b.film_title}">
+          <div>
+            <h3 style="font-size: 1.3rem; margin-bottom: 0.3rem;">${b.film_title}</h3>
+            <div style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 0.5rem;">
+              📍 <strong>${b.cinema_name}</strong> — ${b.screen_name}
+            </div>
+            <div style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 0.5rem;">
+              📅 <strong>${b.screening_date}</strong> | ⏰ ${b.start_time} - ${b.end_time}
+            </div>
+            <div style="font-size: 0.9rem;">
+              💺 Seats: <strong style="color: var(--accent-gold);">${(b.seats || []).join(", ") || "N/A"}</strong>
+            </div>
+          </div>
+        </div>
+
+        <div style="text-align: right; min-width: 170px;">
+          <div style="font-size: 1.3rem; font-weight: 700; color: var(--text-main); margin-bottom: 0.5rem;">
+            ₹${parseFloat(b.total_amount).toFixed(2)}
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 0.4rem; align-items: flex-end;">
+            <span class="badge ${b.booking_status === 'CONFIRMED' ? 'badge-confirmed' : 'badge-pending'}">
+              Booking: ${b.booking_status}
+            </span>
+            <span class="badge" style="background: rgba(148, 163, 184, 0.2); color: #cbd5e1; font-size: 0.75rem;">
+              Payment: ${b.payment_status}
+            </span>
+          </div>
+
+          ${b.booking_status === 'PENDING' ? `
+            <button class="btn btn-primary btn-sm" style="margin-top: 0.75rem; width: 100%;" onclick="payPendingBooking(${b.booking_id})">
+              💳 Pay Now
+            </button>
+          ` : ''}
+
+          <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.5rem;">
+            Ref: #${b.booking_id}
+          </div>
+        </div>
+      </div>
+    `).join("");
+  } catch (err) {
+    container.innerHTML = `<div class="alert alert-danger">Error loading bookings: ${err.message}</div>`;
+  }
+}
+
+async function payPendingBooking(bookingId) {
+  const user = CineAPI.getUser();
+  try {
+    const orderRes = await CineAPI.request("/api/payments/create-order", {
+      method: "POST",
+      body: JSON.stringify({ booking_id: bookingId })
+    });
+    const order = orderRes.data;
+
+    if (order.is_mock) {
+      // Simulate confirmation for demo
+      const mockPayId = `pay_mock_${Date.now()}`;
+      const mockSig = `mock_sig_${Date.now()}`;
+      await verifyAndRefresh(bookingId, order.order_id, mockPayId, mockSig);
+    } else {
+      const options = {
+        key: order.key_id,
+        amount: order.amount,
+        currency: order.currency,
+        name: "CineConnect Screenings",
+        description: `Booking #${bookingId} Payment`,
+        order_id: order.order_id,
+        handler: async function (response) {
+          await verifyAndRefresh(
+            bookingId,
+            response.razorpay_order_id,
+            response.razorpay_payment_id,
+            response.razorpay_signature
+          );
+        },
+        prefill: {
+          name: user.name,
+          email: user.email
+        },
+        theme: {
+          color: "#f59e0b"
+        }
+      };
+      const rzp = new Razorpay(options);
+      rzp.open();
+    }
+  } catch (err) {
+    showBookingAlert(`Payment processing failed: ${err.message}`);
+  }
+}
+
+async function verifyAndRefresh(bookingId, orderId, paymentId, signature) {
+  try {
+    await CineAPI.request("/api/payments/verify", {
+      method: "POST",
+      body: JSON.stringify({
+        booking_id: bookingId,
+        razorpay_order_id: orderId,
+        razorpay_payment_id: paymentId,
+        razorpay_signature: signature
+      })
+    });
+    showBookingAlert(`Payment verified and Booking #${bookingId} confirmed!`, "success");
+    loadBookings();
+  } catch (err) {
+    showBookingAlert(`Verification failed: ${err.message}`);
+  }
+}
+
+document.addEventListener("DOMContentLoaded", loadBookings);
+</script>
+{% endblock %}

@@ -14,7 +14,7 @@ from werkzeug.security import generate_password_hash
 from datetime import date, timedelta
 
 def seed():
-    print("🔄 Initializing CineConnect database...")
+    print("[*] Initializing CineConnect database...")
     init_db()
 
     conn = get_db()
@@ -139,17 +139,17 @@ def seed():
         conn.commit()
 
         # Summary
-        print("\n📊 Database Summary:")
+        print("\n--- Database Summary ---")
         for tbl in ["users", "cinemas", "screens", "seats", "films", "screenings", "bookings"]:
             c = conn.execute(f"SELECT COUNT(*) as n FROM {tbl}").fetchone()["n"]
             print(f"  {tbl}: {c} records")
 
-        print("\n✨ CineConnect database ready!")
-        print("\n🔑 Demo Accounts (all password: Password123!)")
-        print("  viewer@example.com     → VIEWER")
-        print("  filmmaker@example.com  → FILMMAKER")
-        print("  cinema@example.com     → CINEMA")
-        print("  admin@example.com      → ADMIN")
+        print("\n[OK] CineConnect database ready!")
+        print("\nDemo Accounts (all password: Password123!)")
+        print("  viewer@example.com     -> VIEWER")
+        print("  filmmaker@example.com  -> FILMMAKER")
+        print("  cinema@example.com     -> CINEMA")
+        print("  admin@example.com      -> ADMIN")
 
     finally:
         conn.close()

@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+
+{% block title %}Filmmaker Dashboard - CineConnect{% endblock %}
+
+{% block content %}
+<div style="margin-top: 1rem;">
+  <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; margin-bottom: 2rem;">
+    <div>
+      <h1 style="font-size: 2rem; font-weight: 700;">🎬 Filmmaker Studio</h1>
+      <p style="color: var(--text-muted);">Manage your film catalog and submit new indie titles for review.</p>
+    </div>
+    <button class="btn btn-primary" onclick="toggleSubmitModal()">+ Submit New Film</button>
+  </div>
+
+  <div id="dashboard-alert" style="display: none;"></div>
+
+  <!-- Submit Film Card / Form -->
+  <div id="submit-film-card" class="card" style="display: none; padding: 1.5rem; margin-bottom: 2rem; border-color: var(--accent-gold);">
+    <h3 style="margin-bottom: 1rem;">Submit Film for Screening Approval</h3>
+    <form id="submit-film-form">
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+        <div class="form-group">
+          <label class="form-label">Film Title *</label>
+          <input type="text" id="film-title" class="form-control" required placeholder="e.g. Shadows of Mumbai">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Genre *</label>
+          <input type="text" id="film-genre" class="form-control" required placeholder="Drama, Sci-Fi, Thriller">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Duration (in minutes) *</label>
+          <input type="number" id="film-duration" class="form-control" required min="1" placeholder="45">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Poster Image URL</label>
+          <input type="url" id="film-poster" class="form-control" placeholder="https://images.unsplash.com/...">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Synopsis / Description</label>
+        <textarea id="film-desc" class="form-control" rows="3" placeholder="Brief story overview..."></textarea>
+      </div>
+      <div style="display: flex; gap: 1rem; justify-content: flex-end;">
+        <button type="button" class="btn btn-secondary" onclick="toggleSubmitModal()">Cancel</button>
+        <button type="submit" class="btn btn-primary">Submit for Approval</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Films Table -->
+  <h2 style="font-size: 1.3rem; margin-bottom: 1rem;">Your Submitted Films</h2>
+  <div class="table-responsive">
+    <table>
+      <thead>
+        <tr>
+          <th>Poster</th>
+          <th>Title</th>
+          <th>Genre</th>
+          <th>Duration</th>
+          <th>Status</th>
+          <th>Submitted On</th>
+        </tr>
+      </thead>
+      <tbody id="films-table-body">
+        <tr>
+          <td colspan="6" style="text-align: center; color: var(--text-muted);">Loading your films...</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function toggleSubmitModal() {
+  const card = document.getElementById("submit-film-card");
+  card.style.display = card.style.display === "none" ? "block" : "none";
+}
+
+async function loadFilmmakerFilms() {
+  const user = CineAPI.getUser();
+  if (!user || user.role !== "FILMMAKER" && user.role !== "ADMIN") {
+    alert("Filmmaker access required. Please sign in with a Filmmaker account.");
+    window.location.href = "/login";
+    return;
+  }
+
+  const tbody = document.getElementById("films-table-body");
+  try {
+    const res = await CineAPI.request("/api/films/filmmaker/mine");
+    const films = res.data;
+
+    if (!films || films.length === 0) {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="6" style="text-align: center; padding: 2rem; color: var(--text-muted);">
+            You haven't submitted any films yet. Click <strong>+ Submit New Film</strong> above!
+          </td>
+        </tr>
+      `;
+      return;
+    }
+
+    tbody.innerHTML = films.map(f => {
+      let badgeClass = "badge-draft";
+      if (f.status === "APPROVED") badgeClass = "badge-approved";
+      if (f.status === "SUBMITTED") badgeClass = "badge-submitted";
+      if (f.status === "REJECTED") badgeClass = "badge-rejected";
+
+      return `
+        <tr>
+          <td>
+            <img src="${f.poster || 'https://images.unsplash.com/photo-1485846234645-a62644f84728?auto=format&fit=crop&w=600&q=80'}" 
+                 style="width: 45px; height: 65px; object-fit: cover; border-radius: 4px;" alt="${f.title}">
+          </td>
+          <td><strong>${f.title}</strong></td>
+          <td>${f.genre}</td>
+          <td>${f.duration} mins</td>
+          <td><span class="badge ${badgeClass}">${f.status}</span></td>
+          <td style="color: var(--text-muted); font-size: 0.85rem;">${f.created_at}</td>
+        </tr>
+      `;
+    }).join("");
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="6" class="alert alert-danger">${err.message}</td></tr>`;
+  }
+}
+
+document.getElementById("submit-film-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const alertBox = document.getElementById("dashboard-alert");
+  alertBox.style.display = "none";
+
+  const title = document.getElementById("film-title").value.trim();
+  const genre = document.getElementById("film-genre").value.trim();
+  const duration = document.getElementById("film-duration").value;
+  const poster = document.getElementById("film-poster").value.trim();
+  const description = document.getElementById("film-desc").value.trim();
+
+  try {
+    await CineAPI.request("/api/films/", {
+      method: "POST",
+      body: JSON.stringify({ title, genre, duration: parseInt(duration), poster, description })
+    });
+
+    alertBox.className = "alert alert-success";
+    alertBox.textContent = "Film submitted successfully! It is now pending review by admin.";
+    alertBox.style.display = "block";
+
+    document.getElementById("submit-film-form").reset();
+    toggleSubmitModal();
+    loadFilmmakerFilms();
+  } catch (err) {
+    alertBox.className = "alert alert-danger";
+    alertBox.textContent = `Submission failed: ${err.message}`;
+    alertBox.style.display = "block";
+  }
+});
+
+document.addEventListener("DOMContentLoaded", loadFilmmakerFilms);
+</script>
+{% endblock %}

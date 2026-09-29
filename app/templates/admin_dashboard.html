@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+
+{% block title %}Admin Portal - CineConnect{% endblock %}
+
+{% block content %}
+<div style="margin-top: 1rem;">
+  <h1 style="font-size: 2rem; font-weight: 700; margin-bottom: 0.5rem;">🛡️ Platform Administration</h1>
+  <p style="color: var(--text-muted); margin-bottom: 2rem;">Moderate film submissions, approve titles, and monitor registered network accounts.</p>
+
+  <div id="admin-alert" style="display: none;"></div>
+
+  <!-- Film Submissions Review Table -->
+  <h2 style="font-size: 1.3rem; margin-bottom: 1rem;">🎬 Film Approval & Moderation Queue</h2>
+  <div class="table-responsive" style="margin-bottom: 3rem;">
+    <table>
+      <thead>
+        <tr>
+          <th>Poster</th>
+          <th>Title</th>
+          <th>Filmmaker</th>
+          <th>Genre</th>
+          <th>Runtime</th>
+          <th>Status</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="admin-films-tbody">
+        <tr><td colspan="7" style="text-align: center; color: var(--text-muted);">Loading films...</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- User Accounts Table -->
+  <h2 style="font-size: 1.3rem; margin-bottom: 1rem;">👥 Registered Platform Users</h2>
+  <div class="table-responsive">
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Name</th>
+          <th>Email</th>
+          <th>Role</th>
+          <th>Registered On</th>
+        </tr>
+      </thead>
+      <tbody id="admin-users-tbody">
+        <tr><td colspan="5" style="text-align: center; color: var(--text-muted);">Loading users...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function initAdminDashboard() {
+  const user = CineAPI.getUser();
+  if (!user || user.role !== "ADMIN") {
+    alert("Admin access required.");
+    window.location.href = "/login";
+    return;
+  }
+
+  await loadAllFilms();
+  await loadUsers();
+}
+
+async function loadAllFilms() {
+  const tbody = document.getElementById("admin-films-tbody");
+  try {
+    // Fetch all films by querying without status or querying submitted and approved
+    const resSubmitted = await CineAPI.request("/api/films/?status=SUBMITTED");
+    const resApproved = await CineAPI.request("/api/films/?status=APPROVED");
+    const films = [...resSubmitted.data, ...resApproved.data];
+
+    if (!films || films.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--text-muted);">No films found.</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = films.map(f => `
+      <tr>
+        <td>
+          <img src="${f.poster || 'https://images.unsplash.com/photo-1485846234645-a62644f84728?auto=format&fit=crop&w=600&q=80'}" 
+               style="width: 40px; height: 55px; object-fit: cover; border-radius: 4px;" alt="${f.title}">
+        </td>
+        <td><strong>${f.title}</strong></td>
+        <td>${f.filmmaker_name}</td>
+        <td>${f.genre}</td>
+        <td>${f.duration}m</td>
+        <td>
+          <span class="badge ${f.status === 'APPROVED' ? 'badge-approved' : (f.status === 'SUBMITTED' ? 'badge-submitted' : 'badge-rejected')}">
+            ${f.status}
+          </span>
+        </td>
+        <td>
+          <div style="display: flex; gap: 0.4rem;">
+            ${f.status !== 'APPROVED' ? `
+              <button class="btn btn-sm btn-primary" onclick="setFilmStatus(${f.film_id}, 'APPROVED')">Approve</button>
+            ` : ''}
+            ${f.status !== 'REJECTED' ? `
+              <button class="btn btn-sm btn-danger" onclick="setFilmStatus(${f.film_id}, 'REJECTED')">Reject</button>
+            ` : ''}
+          </div>
+        </td>
+      </tr>
+    `).join("");
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="7" class="alert alert-danger">${err.message}</td></tr>`;
+  }
+}
+
+async function setFilmStatus(filmId, status) {
+  const alertBox = document.getElementById("admin-alert");
+  alertBox.style.display = "none";
+
+  try {
+    await CineAPI.request(`/api/films/${filmId}/status`, {
+      method: "PATCH",
+      body: JSON.stringify({ status })
+    });
+
+    alertBox.className = "alert alert-success";
+    alertBox.textContent = `Film status changed to ${status}.`;
+    alertBox.style.display = "block";
+
+    loadAllFilms();
+  } catch (err) {
+    alertBox.className = "alert alert-danger";
+    alertBox.textContent = err.message;
+    alertBox.style.display = "block";
+  }
+}
+
+async function loadUsers() {
+  const tbody = document.getElementById("admin-users-tbody");
+  try {
+    const res = await CineAPI.request("/api/users/");
+    const users = res.data;
+
+    tbody.innerHTML = users.map(u => `
+      <tr>
+        <td>#${u.user_id}</td>
+        <td><strong>${u.name}</strong></td>
+        <td>${u.email}</td>
+        <td><span class="user-badge">${u.role}</span></td>
+        <td style="color: var(--text-muted); font-size: 0.85rem;">${u.created_at}</td>
+      </tr>
+    `).join("");
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="5" class="alert alert-danger">${err.message}</td></tr>`;
+  }
+}
+
+document.addEventListener("DOMContentLoaded", initAdminDashboard);
+</script>
+{% endblock %}

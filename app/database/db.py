@@ -112,4 +112,4 @@ def init_db():
     conn.executescript(SCHEMA_SQL)
     conn.commit()
     conn.close()
-    print(f"✅ Database schema initialized at {DB_PATH}")
+    print(f"[OK] Database schema initialized at {DB_PATH}")
